@@ -1,6 +1,7 @@
 nextflow.enable.dsl = 2 
 params.out = "${projectDir}/output"
 params.temp = "${projectDir}/downloads" //generates a folder with downloads
+params.prefix = "Seq_"
 
 process download_file {
 	publishDir params.out, mode: "copy", overwrite: true
@@ -13,24 +14,71 @@ process download_file {
 	"""
 }
 
+
+process count_seq{
+	publishDir params.out, mode: "copy", overwrite: true
+
+	input: 
+		path input_variable 
+	output:
+		path "count_seq.txt"
+	"""
+		grep ">" ${input_variable} | wc -l > count_seq.txt
+	"""
+		
+}
+
+
+process test {
+	"""
+	
+	"""
+		
+}
+
+
 process split_seq {
 	publishDir params.out, mode: "copy", overwrite: true
 
 	input: 
-		path output_variable 
+		path input_variable 
 	output:
-		path "Seq_*.fasta"  //has to be the name, which comes from the shell (output of(split -d -l 2 --additional-suffix .fasta ${output_variable} Seq_ ))
+		path "${params.prefix}*.fasta"  //has to be the name, which comes from the shell (output of(split -d -l 2 --additional-suffix .fasta ${output_variable} Seq_ ))
 
 	"""
-		split -d -l 2 --additional-suffix .fasta ${output_variable} Seq_  
+		split -d -l 2 --additional-suffix .fasta ${input_variable} ${params.prefix}
 	"""
-	//brauch hier nicht > "*.txt"
+	// split generates files, so I dont need the addition liek > "*.txt"
 }
+
+
+process count_bases {
+
+	publishDir params.out, mode: "copy", overwrite: true
+
+	input: 
+		path input_variable 
+	output:
+		path "${input_variable.getSimpleName()}_basecount.txt" //getSimpleName is a method for paths(file)
+	"""
+		tail -n 1 ${input_variable} | wc -m > ${input_variable.getSimpleName()}_basecount.txt 
+	"""
+
+
+//old: tail -n 1 ${input_variable} | wc -m > ${input_variable}_basecount.txt
+}
+
+
+
 
 
 workflow {
 
 	download_output = download_file()
-	split_seq(download_output)
+	count_seq (download_output)
+	channel_split_seq = split_seq(download_output)
+	channel_split_seq_flatten = channel_split_seq.flatten()
+	count_bases(channel_split_seq_flatten)
+
 
 }
