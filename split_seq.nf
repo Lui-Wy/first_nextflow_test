@@ -3,6 +3,9 @@ params.out = "${projectDir}/output"
 params.temp = "${projectDir}/downloads" //generates a folder with downloads
 params.prefix = "Seq_"
 
+params.download_file = null
+params.input_dir = null
+
 /*
 for commenting out paragraphs
 */
@@ -15,7 +18,7 @@ process download_file {
 		path "batch1.fasta" 
 
 	"""
-		wget https://tinyurl.com/cqbatch1 -O batch1.fasta
+		wget ${params.download_file} -O batch1.fasta
 	"""
 }
 
@@ -106,25 +109,25 @@ process make_summary {
 	output:
 		path "summary.txt" 
 	"""
-		(for i in \$(ls ${input_variable} | sort); do echo \$i | cut -d "_" -f 1,2; cat \$i; done) > summary.txt
+		(for i in \$(ls ${input_variable}); do echo \$i | cut -d "_" -f 1,2; cat \$i; done) > summary.txt
 	"""
 // ich muss das dollarzeichen im echo escapen! \$ , damit es im bash commando erhalten bleibt und nicht, dass hier groovy meint, das sei eine varibale
-// alternative: for i in \$(ls ${input_variable}); do echo \$i; cat \$i; done > summary.txt
-//sort \$i; (${input_variable} | sort)
+
+/* alternative: for i in \$(ls ${input_variable}); do echo \$i; cat \$i; done > summary.txt   ---> ls does also sort the output automatically, 
+so I dont need \$(ls ${input_variable} | sort), because the second sort is obsolete
+*/
 
 /* 
 (for i in \$(ls ${input_variable} | cut -d "_" -f 1,2 | sort); do echo \$i;  done) > summary.txt ----> works, but!
 just works, if I dont need to use the cat function, because cat$i does not exist anymore after cut!
 */
 
-
 }
-
 
 
 workflow {
 
-	
+	/*
 	download_output = download_file()
 	count_seq (download_output)
 	channel_split_seq = split_seq(download_output)
@@ -135,16 +138,29 @@ workflow {
 	
 
 	c_count_repeats = count_repeats(channel_split_seq_flatten)
-	c_count_repeats.view()
+	//c_count_repeats.view()
 
 	count_repeats_collect = c_count_repeats.collect()
-	count_repeats_collect.view()
+	//count_repeats_collect.view()
 
 	make_summary(count_repeats_collect)
-	
+	*/
 
 	// faster and more beautiful: 
-	// download_file | split_seq | flatten | count_repeats | collect | make_summary
+
+
+	if (params.download_file != null && params.input_dir == null){
+		c_download = download_file()
+	} else if (params.download_file == null && params.input_dir != null) {
+		c_download = Channel.fromPath("${params.input_dir}/*.fasta")
+	} else {
+		print ("Error: Please provide either --download_file or --input_dir")
+		System.exit(1)
+	}
+
+
+	
+	c_download | split_seq | flatten | count_repeats | collect | make_summary
 
 
 }
