@@ -2,12 +2,22 @@ nextflow.enable.dsl = 2
 
 params.temp = "${projectDir}/downloads" 
 params.out = "${projectDir}/output"
+
+//params for conditionals at the end:
 params.with_fastqc = false 
 params.with_stats = false
 
+//params for multiple input accession numbers:
 params.accession_number = "${projectDir}/accessions.txt" // entspricht: "/path/to/accessions.txt"
 
+//params for fastp-trimming:
+params.cut_window_size = 4 // set default values from the man fastp page 
+params.cut_mean_quality = 20
+params.length_required = 50
+params.average_qual = 0
 
+//making fastq optional
+params.with_fastp = false
 
 process prefetch {
     //storeDir params.temp
@@ -21,12 +31,10 @@ process prefetch {
         // path "${accession_number}/${accession_number}.sra" would mean:
         // path/to/accessions.txt//path/to/accessions.txt.sra" /
       
-
     """
     prefetch ${accession}
     """
 }
-
 
 
 process split {
@@ -50,7 +58,7 @@ process ngsutils {
     container "https://depot.galaxyproject.org/singularity/ngsutils%3A0.5.9--py27heb79e2c_4"
     //storeDir params.temp 
     publishDir params.out, mode: "copy", overwrite: true
-   input:
+    input:
         path inputvariable
     output:
         path "${inputvariable}_stats.txt"
@@ -58,14 +66,14 @@ process ngsutils {
     """
     fastqutils stats "${inputvariable}" > "${inputvariable}_stats.txt"
     """
-
+4020500
 }
 
 process fastqc {
     container "https://depot.galaxyproject.org/singularity/fastqc%3A0.12.1--hdfd78af_0"
     //storeDir params.temp
     publishDir params.out, mode: "copy", overwrite: true
-   input:
+    input:
         path inputvariable
     output:
         path "${inputvariable.getSimpleName()}_fastqc.zip"
@@ -77,12 +85,70 @@ process fastqc {
 }
 
 
+
+process fastp {
+    container "https://depot.galaxyproject.org/singularity/fastp%3A1.0.1--heae3180_0" //look for the corresponding container in galaxy
+    //storeDir params.temp
+    publishDir params.out, mode: "copy", overwrite: true
+    input:
+        path inputvariable
+    output:
+        path "${sample_id}_trimmed.fastq.gz"
+        path "${sample_id}_fastp.html" 
+        path "${sample_id}_fastp.json"
+    script:
+        sample_id = inputvariable.getSimpleName()
+
+        """
+        fastp \
+        --in1 ${inputvariable} \
+        --out1 ${sample_id}_trimmed.fastq.gz  \
+        --cut_window_size ${params.cut_window_size} \
+        --cut_mean_quality ${params.cut_mean_quality} \
+        --length_required ${params.length_required} \
+        --average_qual ${params.average_qual} \
+        --html ${sample_id}_fastp.html \
+        --json ${sample_id}_fastp.json 
+        """
+}
+
+/*
+fastp \
+        --in1 ${inputvariable} \
+        --out1 ${sample_id} \                               //generatats an output zip
+        --cut_window_size ${params.cut_window_size} \
+        --cut_mean_quality ${params.cut_mean_quality} \
+        --length_required ${params.length_required} \
+        --average_qual ${params.average_qual} \
+        --html ${sample_id}_fastp.html \                    // generates html report
+        --json ${sample_id}_fastp.json                         //generates json report
+
+
+--in1 ${inputvariable}
+Gibt die Eingabedatei mit den Sequenzreads an (FASTQ oder FASTQ.GZ).
+Bei gepaarten Reads würdest du zusätzlich --in2 angeben.
+
+--out1 ${sample_id}_trimmed.fastq.gz
+Ausgabedatei für die gefilterten/qualitätsgeprüften Reads.
+(Für Paired-End: auch --out2 notwendig.)
+
+
+*/
+
+
+
 workflow {
   
-   accession = channel.fromPath(params.accession_number).splitText().map{it -> it.trim()}
+   accession = channel.fromPath(params.accession_number).splitText().map{it -> it.trim()}  
+   //data_ch = prefetch(accession) | split
+
    prefetch_ch = prefetch(accession)
    split_ch = split(prefetch_ch) 
 
+     if (params.with_fastp){
+        fastp(split_ch)
+    }
+/*
     if (params.with_stats){
        ngsutils (split_ch)
     } else if (params.with_fastqc){
@@ -95,17 +161,13 @@ workflow {
 		System.exit(1)
     }
 
+  */
+
 
 }
 
 
 /*
-
-SRR1777174
-SRR12718173
-SRR12426925
-
-accession = channel.fromPath(params.accessions).splitText().map{it -> it.trim()}
 
 
 dear chatgpt, please write a nextflow process that executes fastp on single end data. allow passing these params:
