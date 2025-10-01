@@ -5,18 +5,26 @@ params.out = "${projectDir}/output"
 params.with_fastqc = false 
 params.with_stats = false
 
+params.accession_number = "SRR1777174"
+
 
 process prefetch {
     //storeDir params.temp
+
     container "https://depot.galaxyproject.org/singularity/sra-tools%3A3.2.1--h4304569_1"
 
+    //input:
+      //  path 
     output:
-        path "SRR1777174/SRR1777174.sra" 
+        //path "${params.accession_number}/${params.accession_number}.sra" //does not work - take another look here - maybe now
+        path "${params.accession_number}" 
 
     """
-    prefetch SRR1777174
+    prefetch ${params.accession_number}
     """
 }
+
+
 
 process split {
     //storeDir params.temp
@@ -58,7 +66,10 @@ process fastqc {
    input:
         path inputvariable
     output:
-        path "${inputvariable.getSimpleName()}*" 
+        //path "${inputvariable.getSimpleName()}*" // I generate two output files, so I need the "*" here, but also puts out the input
+
+        path "${inputvariable.getSimpleName()}_fastqc.zip"
+        path "${inputvariable.getSimpleName()}_fastqc.html"
 
     """
     fastqc -o . -f fastq "${inputvariable}" 
@@ -68,8 +79,18 @@ process fastqc {
 
 
 
+
+
+
+
+
+
+
 //    usage of fastqc:
 // fastqc [-o output dir] [--(no)extract] [-f fastq|bam|sam] [-c contaminant file] seqfile1 .. seqfileN
+
+
+
 
 
 
@@ -80,15 +101,57 @@ workflow {
     //ngsutils(c_split)
     //fastqc(c_split)
 
-
+    /*
     if (params.with_fastqc == false && params.with_stats != false){
-       c_run = ngsutils //without brackets
+       c_run = ngsutils //without brackets //run_ch
 
     } else if (params.with_fastqc != false && params.with_stats == false){
         c_run = fastqc
+   
     } else {
         print ("Error: Please provide either --with_fastqc or --with_stats")
 		System.exit(1)
     }
-   prefetch | split | c_run 
+   */
+
+    //prefetch  | split | c_run
+
+
+
+    // this part here is because the pipe cant deal with, if both params --with_fastqc and --with_stats are given
+   prefetch_ch = prefetch()
+   split_ch = split(prefetch_ch) 
+
+   /* old version, but two long
+    if (params.with_fastqc == false && params.with_stats != false){
+       ngsutils (split_ch)
+
+    } else if (params.with_fastqc != false && params.with_stats == false){
+        fastqc (split_ch)
+
+    } else if (params.with_fastqc != false && params.with_stats != false){
+        ngsutils (split_ch)
+        fastqc (split_ch)
+    } else {
+        print ("Error: Please provide either --with_fastqc or --with_stats")
+		System.exit(1)
+    }
+   */
+
+
+    //still not quit right?
+    if (params.with_stats){
+       ngsutils (split_ch)
+    } else if (params.with_fastqc){
+        fastqc (split_ch)
+    } else if (params.with_fastqc && params.with_stats){
+        ngsutils (split_ch)
+        fastqc (split_ch)
+    } else {
+        print ("Error: Please provide either --with_fastqc or --with_stats")
+		System.exit(1)
+    }
+
+
+
 }
