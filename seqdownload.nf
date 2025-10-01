@@ -19,6 +19,7 @@ params.average_qual = 0
 //making fastq optional
 params.with_fastp = false
 
+
 process prefetch {
     //storeDir params.temp
 
@@ -28,9 +29,7 @@ process prefetch {
       val accession
     output:
         path "${accession}/${accession}.sra" 
-        // path "${accession_number}/${accession_number}.sra" would mean:
-        // path/to/accessions.txt//path/to/accessions.txt.sra" /
-      
+            
     """
     prefetch ${accession}
     """
@@ -66,7 +65,7 @@ process ngsutils {
     """
     fastqutils stats "${inputvariable}" > "${inputvariable}_stats.txt"
     """
-4020500
+
 }
 
 process fastqc {
@@ -87,7 +86,7 @@ process fastqc {
 
 
 process fastp {
-    container "https://depot.galaxyproject.org/singularity/fastp%3A1.0.1--heae3180_0" //look for the corresponding container in galaxy
+    container "https://depot.galaxyproject.org/singularity/fastp%3A1.0.1--heae3180_0" 
     //storeDir params.temp
     publishDir params.out, mode: "copy", overwrite: true
     input:
@@ -112,48 +111,42 @@ process fastp {
         """
 }
 
-/*
-fastp \
-        --in1 ${inputvariable} \
-        --out1 ${sample_id} \                               //generatats an output zip
-        --cut_window_size ${params.cut_window_size} \
-        --cut_mean_quality ${params.cut_mean_quality} \
-        --length_required ${params.length_required} \
-        --average_qual ${params.average_qual} \
-        --html ${sample_id}_fastp.html \                    // generates html report
-        --json ${sample_id}_fastp.json                         //generates json report
-
-
---in1 ${inputvariable}
-Gibt die Eingabedatei mit den Sequenzreads an (FASTQ oder FASTQ.GZ).
-Bei gepaarten Reads würdest du zusätzlich --in2 angeben.
-
---out1 ${sample_id}_trimmed.fastq.gz
-Ausgabedatei für die gefilterten/qualitätsgeprüften Reads.
-(Für Paired-End: auch --out2 notwendig.)
-
-
-*/
 
 
 
 workflow {
   
-   accession = channel.fromPath(params.accession_number).splitText().map{it -> it.trim()}  
+   accession = Channel.fromPath(params.accession_number).splitText().map{it -> it.trim()}  
    //data_ch = prefetch(accession) | split
 
    prefetch_ch = prefetch(accession)
    split_ch = split(prefetch_ch) 
 
-     if (params.with_fastp){
-        fastp(split_ch)
+    if (params.with_stats){
+       ngsutils(split_ch)
+    } 
+    if (params.with_fastqc){
+        fastqc(split_ch)
+    } 
+    if (params.with_fastqc == false && params.with_stats == false) {
+        print ("Attention for fastqc or stats, please provide either --with_fastqc or --with_stats")
+		//System.exit(1)                                                              //wenn ich das hier schreibe, wird der folgende if block gar nicht ausgeführt!
     }
-/*
+
+    if (params.with_fastp){
+        fastp(split_ch)
+    } else {
+        print ("Attention: If you want to do a fastp- analysis, please provide either --with_fastp")
+        //System.exit(1)                                                            //bedeutet auch, sobald ich --fastp nicht setze, bricht der run ab! (auch kein fastqc/stats)
+    }
+
+
+    /*
     if (params.with_stats){
        ngsutils (split_ch)
     } else if (params.with_fastqc){
         fastqc (split_ch)
-    } else if (params.with_fastqc && params.with_stats){
+    } else if (params.with_fastqc && params.with_stats){ //wenn ich das so schreibe, wird diese bedinnung nie erfüllt, da ich das ja schon so im ersten if (params.with_stats) habe
         ngsutils (split_ch)
         fastqc (split_ch)
     } else {
@@ -166,18 +159,3 @@ workflow {
 
 }
 
-
-/*
-
-
-dear chatgpt, please write a nextflow process that executes fastp on single end data. allow passing these params:
-
-// --cut_window_size $params.something
-// --cut_mean_quality $params.something
-// --length_required $params.something
-// --average_qual $params.something
-
-ps: output html and json report
-
-
-*/
