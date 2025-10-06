@@ -10,11 +10,7 @@ params.with_stats = false
 //params for multiple input accession numbers:
 params.accession_number = "${projectDir}/accessions.txt" // entspricht: "/path/to/accessions.txt"
 
-//params for fastp-trimming:
-params.cut_window_size = 4 // set default values from the man fastp page 
-params.cut_mean_quality = 20
-params.length_required = 50
-params.average_qual = 0
+
 
 //making fastq optional
 params.with_fastp = false
@@ -129,21 +125,40 @@ process multi_qc {
 // von Max 
 
 process spades {
+    //storeDir params.temp
     publishDir params.out, mode: 'copy', overwrite: true
     container "https://depot.galaxyproject.org/singularity/spades%3A4.2.0--h8d6e82b_2"
     input:
         path fastqFiles
     output:
         path "${fastqFiles.getSimpleName()}"
+        path "${fastqFiles.getSimpleName()}_contigs.fasta", emit: contigs_fasta
      script:
         """
             spades.py -s ${fastqFiles} -o ${fastqFiles.getSimpleName()}
+            cp "${fastqFiles.getSimpleName()}/contigs.fasta" "${fastqFiles.getSimpleName()}_contigs.fasta" 
         """
-
+// I need for the quast process just the contig files, but they have now just the name "contig.fasta" so I need t rename them in order to pass
+//on the information of witch acession number I am looking at for the quast process // also a second output is neccessary
 }
 
 
+process quast {
+    publishDir params.out, mode: 'copy', overwrite: true
+    container "https://depot.galaxyproject.org/singularity/quast%3A5.3.0--py39pl5321heaaa4ec_0"
+    input:
+        path contigs
+    output:
+        path "${contigs}_quast_test_output"
+      
+     script:
+        """
+            quast.py ${contigs} --min-contig 10 -o ${contigs}_quast_test_output
+           
+        """
+}
 
+// I have to set the --min-contig 10 (because I have one contig wich has just 36 bp)
 
 
 workflow {
@@ -175,9 +190,9 @@ workflow {
 
     multi_qc(fastp_ch.json.collect()) //needs to collect all three files
 
-    spades (fastp_ch.trimmed)
+    spades_ch = spades (fastp_ch.trimmed)
 
-
+    quast(spades_ch.contigs_fasta)
 
 }
 
