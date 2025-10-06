@@ -21,7 +21,7 @@ params.with_fastp = false
 
 
 process prefetch {
-    //storeDir params.temp
+    storeDir params.temp
 
     container "https://depot.galaxyproject.org/singularity/sra-tools%3A3.2.1--h4304569_1"
 
@@ -37,7 +37,7 @@ process prefetch {
 
 
 process split {
-    //storeDir params.temp
+    
     publishDir params.out, mode: "copy", overwrite: true
 
     container "https://depot.galaxyproject.org/singularity/sra-tools%3A3.2.1--h4304569_1"
@@ -55,7 +55,7 @@ process split {
 
 process ngsutils {
     container "https://depot.galaxyproject.org/singularity/ngsutils%3A0.5.9--py27heb79e2c_4"
-    //storeDir params.temp 
+    
     publishDir params.out, mode: "copy", overwrite: true
     input:
         path inputvariable
@@ -70,7 +70,7 @@ process ngsutils {
 
 process fastqc {
     container "https://depot.galaxyproject.org/singularity/fastqc%3A0.12.1--hdfd78af_0"
-    //storeDir params.temp
+    
     publishDir params.out, mode: "copy", overwrite: true
     input:
         path inputvariable
@@ -87,29 +87,61 @@ process fastqc {
 
 process fastp {
     container "https://depot.galaxyproject.org/singularity/fastp%3A1.0.1--heae3180_0" 
-    //storeDir params.temp
+    
     publishDir params.out, mode: "copy", overwrite: true
     input:
         path inputvariable
     output:
-        path "${sample_id}_trimmed.fastq.gz"
-        path "${sample_id}_fastp.html" 
-        path "${sample_id}_fastp.json"
+        path "${sample_id}_trimmed.fastq", emit: trimmed // - multiqc just needs the json file, so I give here aliases
+        path "${sample_id}_fastp.html", emit: html 
+        path "${sample_id}_fastp.json", emit: json //alternative: I could use aliases with ", emit: json"
     script:
         sample_id = inputvariable.getSimpleName()
 
         """
         fastp \
         --in1 ${inputvariable} \
-        --out1 ${sample_id}_trimmed.fastq.gz  \
-        --cut_window_size ${params.cut_window_size} \
-        --cut_mean_quality ${params.cut_mean_quality} \
-        --length_required ${params.length_required} \
-        --average_qual ${params.average_qual} \
+        --out1 ${sample_id}_trimmed.fastq  \
         --html ${sample_id}_fastp.html \
         --json ${sample_id}_fastp.json 
         """
 }
+
+
+
+process multi_qc {
+ container "https://depot.galaxyproject.org/singularity/multiqc%3A1.9--pyh9f0ad1d_0"
+   
+    publishDir params.out, mode: "copy", overwrite: true
+    input:
+        path inputvariable
+    output:
+        path "multiqc_*" // not "${sample_id}.html" --> has another name, it always puts out
+   
+        """
+        multiqc .
+        """
+
+
+    }
+
+
+// von Max 
+
+process spades {
+    publishDir params.out, mode: 'copy', overwrite: true
+    container "https://depot.galaxyproject.org/singularity/spades%3A4.2.0--h8d6e82b_2"
+    input:
+        path fastqFiles
+    output:
+        path "${fastqFiles.getSimpleName()}"
+     script:
+        """
+            spades.py -s ${fastqFiles} -o ${fastqFiles.getSimpleName()}
+        """
+
+}
+
 
 
 
@@ -134,27 +166,17 @@ workflow {
     }
 
     if (params.with_fastp){
-        fastp(split_ch)
+        fastp_ch = fastp(split_ch)
     } else {
-        print ("Attention: If you want to do a fastp- analysis, please provide either --with_fastp")
+        print ("Attention: If you want to do a fastp- analysis, please provide --with_fastp")
         //System.exit(1)                                                            //bedeutet auch, sobald ich --fastp nicht setze, bricht der run ab! (auch kein fastqc/stats)
     }
 
 
-    /*
-    if (params.with_stats){
-       ngsutils (split_ch)
-    } else if (params.with_fastqc){
-        fastqc (split_ch)
-    } else if (params.with_fastqc && params.with_stats){ //wenn ich das so schreibe, wird diese bedinnung nie erfüllt, da ich das ja schon so im ersten if (params.with_stats) habe
-        ngsutils (split_ch)
-        fastqc (split_ch)
-    } else {
-        print ("Error: Please provide either --with_fastqc or --with_stats")
-		System.exit(1)
-    }
+    multi_qc(fastp_ch.json.collect()) //needs to collect all three files
 
-  */
+    spades (fastp_ch.trimmed)
+
 
 
 }
